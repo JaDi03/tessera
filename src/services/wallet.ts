@@ -1,9 +1,6 @@
 import { privateKeyToAccount } from 'viem/accounts';
 import type { Hex } from 'viem';
 
-/**
- * Interface required by BatchEvmScheme from the Circle SDK
- */
 export interface BatchEvmSigner {
     address: `0x${string}`;
     signTypedData: (params: any) => Promise<`0x${string}`>;
@@ -14,19 +11,26 @@ export interface BatchEvmSigner {
  * Manages the custody of Session Keys delegated by the viewers.
  */
 export class WalletService {
+    // Stores ephemeral private keys in memory mapped by userId
+    private sessionKeys = new Map<string, Hex>();
+
+    /**
+     * Registers a funded ephemeral key for a user
+     */
+    public registerSessionKey(userId: string, privateKey: string): void {
+        this.sessionKeys.set(userId, privateKey as Hex);
+        console.log(`[Wallet] 🔐 Ephemeral Key registered securely for user: ${userId}`);
+    }
+
     /**
      * Retrieves the session key (BatchEvmSigner) for a specific user.
-     * @param userId The ID of the user in Owncast
-     * @returns BatchEvmSigner ready to sign payments with Circle
      */
     public async getSessionSignerForUser(userId: string): Promise<BatchEvmSigner> {
-        // TODO: In production, fetch the encrypted key from the database
-        // e.g.: const encryptedKey = await db.sessionKeys.findOne({ userId });
-        
-        const privateKeyHex = process.env.SESSION_PRIVATE_KEY as Hex;
+        // Retrieve the ephemeral key provided during the Lobby phase
+        const privateKeyHex = this.sessionKeys.get(userId);
         
         if (!privateKeyHex) {
-            throw new Error("No session key found for user. User must delegate a session key before joining.");
+            throw new Error(`No session key found for user ${userId}. User must fund a session key via the Lobby.`);
         }
 
         const account = privateKeyToAccount(privateKeyHex);
