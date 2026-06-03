@@ -19,7 +19,7 @@
 
 The **Arc Cashier Core Engine** is the central nervous system of the Arc Web3 payment infrastructure. It is a strictly platform-agnostic, headless microservice designed to handle the complex financial lifecycle of **Circle Nanopayments (x402 Batched Settlement)**. 
 
-By abstracting away the intricacies of blockchain transactions, EIP-3009 mathematical signatures, and ephemeral session key management, the Core Engine allows external **Connectors** (like Owncast, Livepeer, or YouTube plugins) to effortlessly monetize streaming content by simply emitting standard HTTP webhooks for user presence.
+By abstracting away the intricacies of blockchain transactions, EIP-3009 mathematical signatures, and ephemeral session key management, the Core Engine allows external **Connectors** (like Owncast, Livepeer, or YouTube plugins) to effortlessly monetize streaming content. The Core does not care *how* a connector tracks users (whether via Webhooks, WebSockets, API polling, or client-side heartbeats)—it simply exposes a standard set of internal methods to start billing and settle on-chain.
 
 ---
 
@@ -47,8 +47,8 @@ graph TD
     Routes -- 2. Stores Key --> Wallet
     Routes -- 3. Deposits 1 USDC --> Gateway
     
-    Plugin -- 4. USER_JOINED Webhook --> Session
-    Plugin -- 5. USER_PARTED Webhook --> Session
+    Plugin -- 4. Platform Native Event (JOIN) --> Session
+    Plugin -- 5. Platform Native Event (PART) --> Session
     
     Session -- 6. Fetch Key --> Wallet
     Session -- 7. Calculate Debt --> Settlement
