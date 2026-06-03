@@ -19,7 +19,7 @@
 
 The **Arc Cashier Core Engine** is the central nervous system of the Arc Web3 payment infrastructure. It is a strictly platform-agnostic, headless microservice designed to handle the complex financial lifecycle of **Circle Nanopayments (x402 Batched Settlement)**. 
 
-By abstracting away the intricacies of blockchain transactions, EIP-3009 mathematical signatures, and ephemeral session key management, the Core Engine allows external **Connectors** (like Owncast, Livepeer, or YouTube plugins) to effortlessly monetize streaming content. The Core does not care *how* a connector tracks users (whether via Webhooks, WebSockets, API polling, or client-side heartbeats)—it simply exposes a standard set of internal methods to start billing and settle on-chain.
+By abstracting away the intricacies of blockchain transactions, EIP-3009 mathematical signatures, and ephemeral session key management, the Core Engine allows external **Connectors** (Content Platform Plugins) to effortlessly monetize streaming content. The Core does not care *how* a connector tracks users (whether via Webhooks, WebSockets, API polling, or client-side heartbeats)—it simply exposes a standard set of internal methods to start billing and settle on-chain.
 
 ---
 
@@ -28,31 +28,45 @@ By abstracting away the intricacies of blockchain transactions, EIP-3009 mathema
 The Core operates on a strictly Off-Chain signature batching model to ensure zero-gas latency during live streams, only touching the blockchain for the initial deposit and the final Batched Settlement.
 
 ```mermaid
-graph TD
-    %% Core Nodes
-    subgraph Core Engine [Arc Cashier Core]
-        Routes[Core Routes: /register-session]
-        Wallet[Wallet Service: Ephemeral Key Custody]
-        Session[Session Service: Duration Tracking]
-        Settlement[Settlement Service: Circle SDK]
+sequenceDiagram
+    autonumber
+    actor Viewer
+    participant Connector as Content Platform Connector
+    
+    box rgb(30, 40, 50) Arc Cashier Core Engine
+    participant CoreRoutes as Core Routes
+    participant Wallet as Wallet Service
+    participant Session as Session Service
+    participant Settlement as Settlement Service
     end
-
-    %% External Actors
-    Client[Frontend Paywall]
-    Plugin[Platform Connector]
-    Gateway[(Circle Gateway Contract)]
-
-    %% Connections
-    Client -- 1. Sends Ephemeral Key --> Routes
-    Routes -- 2. Stores Key --> Wallet
-    Routes -- 3. Deposits 1 USDC --> Gateway
     
-    Plugin -- 4. Platform Native Event (JOIN) --> Session
-    Plugin -- 5. Platform Native Event (PART) --> Session
+    participant Gateway as Circle Gateway (Blockchain)
+
+    %% 1. Onboarding Phase
+    note over Viewer, Gateway: Phase 1: Onboarding & Deposit
+    Viewer->>Connector: Access Content
+    Viewer->>Viewer: Generates Ephemeral Key
+    Viewer->>Gateway: Funds Ephemeral Key with 1 USDC
+    Viewer->>CoreRoutes: Sends User ID & Ephemeral Key (/register-session)
+    CoreRoutes->>Gateway: Executes deposit() using Ephemeral Key
+    CoreRoutes->>Wallet: Stores Ephemeral Key securely
+    CoreRoutes-->>Connector: Session Registered
+
+    %% 2. Consumption Phase
+    note over Viewer, Settlement: Phase 2: Content Consumption
+    Connector->>Session: Platform Native Event: recordJoin(userId)
+    Note over Viewer, Connector: Viewer consumes content...
+    Connector->>Session: Platform Native Event: recordPartAndSettle(userId)
     
-    Session -- 6. Fetch Key --> Wallet
-    Session -- 7. Calculate Debt --> Settlement
-    Settlement -- 8. Execute Batch Settle --> Gateway
+    %% 3. Settlement Phase
+    note over Session, Gateway: Phase 3: Off-chain Billing & Settlement
+    Session->>Session: Calculates duration and owed USDC
+    Session->>Wallet: Requests User's Ephemeral Key
+    Wallet-->>Session: Returns Key
+    Session->>Settlement: triggerSettlement(amount, Key)
+    Settlement->>Settlement: Signs EIP-3009 payload silently
+    Settlement->>Gateway: Submits Batch Settlement to Blockchain
+    Gateway-->>Settlement: Transaction Confirmed
 ```
 
 ---
