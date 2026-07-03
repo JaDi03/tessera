@@ -50,12 +50,16 @@ body.arc-locked > *:not(#arc-paywall-overlay):not(iframe) {
 }
 
 #arc-paywall-logo {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: rgba(79,172,254,0.7);
-    margin-bottom: 10px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+#arc-paywall-logo img {
+    height: 38px;
+    width: auto;
+    filter: drop-shadow(0 0 8px rgba(255, 179, 0, 0.35));
 }
 
 #arc-paywall-modal h2 {
@@ -668,3 +672,79 @@ body.arc-locked > *:not(#arc-paywall-overlay):not(iframe) {
 }
 
 .arc-sm-stats span:last-child { color: #e2e8f0; }
+
+/* ── Deposit Selector ────────────────────────────── */
+
+.arc-deposit-selector-wrap {
+    margin-top: 20px;
+    margin-bottom: 20px;
+    text-align: left;
+}
+
+.arc-deposit-selector {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    align-items: center;
+}
+
+.arc-deposit-opt {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+    padding: 10px 8px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: center;
+}
+
+.arc-deposit-opt:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border-color: rgba(79, 172, 254, 0.3);
+}
+
+.arc-deposit-opt.active {
+    background: linear-gradient(90deg, rgba(0, 112, 243, 0.2), rgba(0, 180, 216, 0.2));
+    border: 1px solid #00f2fe;
+    color: #00f2fe;
+    box-shadow: 0 0 12px rgba(0, 242, 254, 0.15);
+}
+
+.arc-deposit-custom-wrap {
+    position: relative;
+    flex: 1.2;
+    display: flex;
+    align-items: center;
+}
+
+.arc-deposit-custom-symbol {
+    position: absolute;
+    left: 10px;
+    color: #64748b;
+    font-size: 13px;
+    pointer-events: none;
+}
+
+#arc-deposit-custom-input {
+    width: 100%;
+    padding: 10px 8px 10px 22px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.25);
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+#arc-deposit-custom-input:focus {
+    border-color: #00f2fe;
+    background: rgba(0, 0, 0, 0.35);
+    box-shadow: 0 0 12px rgba(0, 242, 254, 0.15);
+}
