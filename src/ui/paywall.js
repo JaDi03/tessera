@@ -157,7 +157,9 @@ function renderPaywallOverlay() {
     overlay.innerHTML = `
         <div id="arc-paywall-modal">
             <div id="arc-paywall-header">
-                <div id="arc-paywall-logo">TESSERA</div>
+                <div id="arc-paywall-logo">
+                    <img src="${SCRIPT_BASE_DIR}logo_yellow.svg" alt="Tessera" />
+                </div>
                 <h2>${title}</h2>
                 <p>${subtitle}</p>
             </div>
@@ -205,6 +207,20 @@ function renderPaywallOverlay() {
                             </div>
                             <span class="arc-chevron">↗</span>
                         </a>
+                    </div>
+
+                    <!-- Deposit Selector Section -->
+                    <div class="arc-deposit-selector-wrap">
+                        <span class="arc-info-label">USDC Deposit Amount to Gateway</span>
+                        <div class="arc-deposit-selector">
+                            <button type="button" class="arc-deposit-opt active" data-amount="1.00">1 USDC</button>
+                            <button type="button" class="arc-deposit-opt" data-amount="5.00">5 USDC</button>
+                            <button type="button" class="arc-deposit-opt" data-amount="10.00">10 USDC</button>
+                            <div class="arc-deposit-custom-wrap">
+                                <span class="arc-deposit-custom-symbol">$</span>
+                                <input id="arc-deposit-custom-input" type="number" min="0.1" step="0.1" placeholder="Custom" />
+                            </div>
+                        </div>
                     </div>
 
                     <div id="arc-waiting-balance" class="arc-waiting-box" style="display:none;">
@@ -304,6 +320,27 @@ function renderPaywallOverlay() {
     document.getElementById('arc-unlock-btn').addEventListener('click', handleUnlock);
     document.getElementById('arc-cctp-info-btn').addEventListener('click', toggleCctpInfo);
     document.getElementById('arc-copy-btn').addEventListener('click', copyWalletAddress);
+
+    // Wire up deposit selector buttons and custom input events
+    const optButtons = overlay.querySelectorAll('.arc-deposit-opt');
+    const customInput = overlay.querySelector('#arc-deposit-custom-input');
+
+    optButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            optButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            if (customInput) customInput.value = '';
+        });
+    });
+
+    if (customInput) {
+        customInput.addEventListener('input', () => {
+            optButtons.forEach(b => b.classList.remove('active'));
+        });
+        customInput.addEventListener('focus', () => {
+            optButtons.forEach(b => b.classList.remove('active'));
+        });
+    }
 
     // Build network list inside CCTP modal
     buildCctpNetworkList();
@@ -409,9 +446,8 @@ async function getOrCreateArcWallet() {
 
 // ─── Arc Balance Check (via eth_call on Arc RPC) ──────────────────────────────
 
-async function checkArcBalance(address) {
+async function getArcBalance(address) {
     try {
-        // On Arc Testnet, USDC is the native gas token. Use eth_getBalance instead of ERC20 balanceOf
         const res = await fetch('https://rpc.testnet.arc.network', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -421,15 +457,18 @@ async function checkArcBalance(address) {
             }),
         });
         const json = await res.json();
-        // Native balance on Arc Testnet uses 18 decimals!
-        // 0.01 USDC = 0.01 * 10^18 = 10000000000000000 wei
         const balance = BigInt(json.result || '0x0');
-        // Check if balance >= 0.01 native USDC (10^16 wei)
-        return balance >= 10000000000000000n;
+        // Native balance on Arc Testnet uses 18 decimals!
+        return Number(balance) / 1e18;
     } catch (e) {
-        console.warn('[Tessera] Balance check failed:', e);
-        return false;
+        console.warn('[Tessera] Balance fetch failed:', e);
+        return 0;
     }
+}
+
+async function checkArcBalance(address) {
+    const bal = await getArcBalance(address);
+    return bal >= 0.01;
 }
 
 // ─── Phase 2: Funding Panel ───────────────────────────────────────────────────
@@ -479,6 +518,20 @@ function enableUnlockButton() {
     setTimeout(() => btn.classList.remove('arc-pulse-once'), 600);
 }
 
+function getSelectedDepositAmount() {
+    const customInput = document.getElementById('arc-deposit-custom-input');
+    if (customInput && customInput.value.trim() !== '') {
+        const amt = parseFloat(customInput.value);
+        return isNaN(amt) ? 1.00 : amt;
+    }
+    const activeBtn = document.querySelector('.arc-deposit-opt.active');
+    if (activeBtn) {
+        const amt = parseFloat(activeBtn.getAttribute('data-amount'));
+        return isNaN(amt) ? 1.00 : amt;
+    }
+    return 1.00;
+}
+
 // ─── Phase 3: Unlock Video / Enable Tipping ───────────────────────────────────
 
 async function handleUnlock() {
@@ -490,6 +543,17 @@ async function handleUnlock() {
     setFundStatus('');
 
     try {
+        const selectedAmount = getSelectedDepositAmount();
+        if (selectedAmount < 0.1) {
+            throw new Error('Minimum deposit amount is 0.1 USDC');
+        }
+
+        setFundStatus('Checking wallet balance…');
+        const currentBalance = await getArcBalance(viewerState.walletAddress);
+        if (currentBalance < selectedAmount) {
+            throw new Error(`Insufficient funds: Your wallet has $${currentBalance.toFixed(4)} USDC, but you chose to deposit $${selectedAmount.toFixed(2)} USDC.`);
+        }
+
         setFundStatus('Preparing deposit to Gateway…');
 
         // Refresh Circle token if expired
@@ -531,14 +595,14 @@ async function handleUnlock() {
         if (!skipDeposit) {
             setFundStatus('Approve USDC deposit in the popup…');
 
-            // Prepare a 1 USDC deposit challenge from SCA → Ephemeral Wallet
+            // Prepare a deposit challenge from SCA → Ephemeral Wallet
             const depositRes = await fetch(ARC_API_BASE + '/api/core/circle/prepare-deposit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     userToken: viewerState.userToken,
                     walletId: viewerState.walletId,
-                    depositAmount: '1',
+                    depositAmount: selectedAmount.toString(),
                     ephemeralPk: viewerState.ephemeralPk,
                 }),
             });
@@ -1046,6 +1110,8 @@ function startSessionTimer() {
         .then(function(data) { if (data) initialGatewayBalance = Number(data.gatewayWithdrawable); })
         .catch(function() {});
 
+    let lastWithdrawableBalance = null;
+
     window.sessionTimer = setInterval(async () => {
         tickCount++;
         const shouldTick = !document.body.classList.contains('arc-locked') && playingMediaCount > 0;
@@ -1067,7 +1133,13 @@ function startSessionTimer() {
                         const data = await balanceRes.json();
                         const withdrawable = Number(data.gatewayWithdrawable);
                         // Capture initial balance on first heartbeat if the immediate fetch above hadn't resolved yet
-                        if (initialGatewayBalance === null) initialGatewayBalance = withdrawable;
+                        if (initialGatewayBalance === null) {
+                            initialGatewayBalance = withdrawable;
+                        } else if (lastWithdrawableBalance !== null && withdrawable > lastWithdrawableBalance) {
+                            // Top-up detected! Adjust initial balance to keep spent calculation correct.
+                            initialGatewayBalance += (withdrawable - lastWithdrawableBalance);
+                        }
+                        lastWithdrawableBalance = withdrawable;
                         const balEl = document.getElementById('arc-sm-balance');
                         if (balEl) balEl.textContent = '$' + withdrawable.toFixed(4) + ' USDC';
                         // Display real cost: what the gateway actually deducted, not a client-side estimate
