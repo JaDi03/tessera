@@ -1292,17 +1292,6 @@
   
 </li>
       
-        <li class="md-nav__item">
-  <a href="#reference-owncast-connector" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reference: Owncast Connector
-      
-    </span>
-  </a>
-  
-</li>
-      
     </ul>
   
 </nav>
@@ -1472,17 +1461,6 @@
   
 </li>
       
-        <li class="md-nav__item">
-  <a href="#reference-owncast-connector" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reference: Owncast Connector
-      
-    </span>
-  </a>
-  
-</li>
-      
     </ul>
   
 </nav>
@@ -1552,29 +1530,29 @@
 
 
 <h1 id="building-a-connector">Building a Connector<a class="headerlink" href="#building-a-connector" title="Permanent link">&para;</a></h1>
-<p>This guide walks you through adding support for a new streaming platform to Tessera. A connector is a lightweight adapter (~100 lines) that translates your platform's presence events into Tessera's billing engine.</p>
+<p>This guide walks you through adding support for a new platform to Tessera. A connector is a lightweight adapter (~50 lines of TypeScript) that translates your platform's event and lifecycle signals into Tessera's core billing engine.</p>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Your platform must emit some form of "user joined" and "user left" events (webhooks, WebSocket messages, API polling, etc.).</li>
-<li>You should understand how your platform tracks viewer presence.</li>
+<li>Your platform must support plugins, custom scripts, or outbound webhook notifications.</li>
+<li>You should understand how the platform tracks active consumption sessions.</li>
 </ul>
 <h2 id="the-core-concept-mapping-events-to-endpoints">The Core Concept: Mapping Events to Endpoints<a class="headerlink" href="#the-core-concept-mapping-events-to-endpoints" title="Permanent link">&para;</a></h2>
 <p>Tessera's core infrastructure is platform-agnostic. It provides fixed billing functions, and your connector's job is simply to translate your platform's native events into the appropriate Tessera payment model. </p>
-<p>Every platform emits different signals. A music server emits a "scrobble" when a track is played. A live-streaming server fires a webhook when a viewer joins. A photo gallery resolves a shared link. As a developer, you decide which Tessera payment model best fits your platform's events:</p>
+<p>Every platform emits different signals. A music server emits an event when a track is played. A video platform fires a webhook when a viewer starts watching. A blog platform calls an endpoint when an article is loaded. As a developer, you decide which Tessera payment model best fits your platform's events:</p>
 <h3 id="option-a-continuous-streaming-per-second">Option A: Continuous Streaming (Per-Second)<a class="headerlink" href="#option-a-continuous-streaming-per-second" title="Permanent link">&para;</a></h3>
 <p>Best for: Live streams, Video-on-Demand, or time-based access.
-- <strong>Start the meter:</strong> Call <code>sessionService.recordJoin(userId, videoId, ratePerSecond, creatorAddress)</code> when the user starts consuming. (The <code>ratePerSecond</code> and <code>creatorAddress</code> allow you to dynamically price the stream and route funds directly to the specific creator).
-- <strong>Stop the meter:</strong> Call <code>sessionService.recordPartAndSettle(userId)</code> when the user leaves or playback stops.</p>
+- <strong>Start the meter:</strong> Call <code>sessionService.recordJoin(userId, contentId, ratePerSecond, creatorAddress)</code> when the user starts consuming. (The <code>ratePerSecond</code> and <code>creatorAddress</code> allow you to dynamically price the stream and route funds directly to the specific creator).
+- <strong>Stop the meter:</strong> Call <code>sessionService.recordPartAndSettle(userId)</code> when the user leaves or consumption stops.</p>
 <h3 id="option-b-one-off-payments-tips">Option B: One-Off Payments &amp; Tips<a class="headerlink" href="#option-b-one-off-payments-tips" title="Permanent link">&para;</a></h3>
-<p>Best for: Voluntary donations, per-article purchases, photo downloads, or event-driven micro-licenses (e.g., a music scrobble).
+<p>Best for: Voluntary donations, per-article purchases, downloads, or event-driven micro-licenses.
 - <strong>Trigger a Payment:</strong> Your frontend or connector can call <code>POST /api/core/tip</code> with the <code>userId</code>, <code>creatorWallet</code>, and <code>amount</code>.
 - This executes a one-time, off-chain settlement directly from the user's Gateway balance to the creator.</p>
 <p>You can implement either of these models, or both, depending on what data structures and events your platform exposes.</p>
 <h2 id="the-frontend-identity-concept">The Frontend &amp; Identity Concept<a class="headerlink" href="#the-frontend-identity-concept" title="Permanent link">&para;</a></h2>
-<p>Tessera provides a universal, platform-agnostic UI (<code>src/ui/paywall.js</code>) that handles wallets, CCTP bridging, and Circle sessions. You do not need to build a crypto frontend from scratch.</p>
+<p>Tessera provides a universal, platform-agnostic UI (<code>paywall.js</code> &amp; <code>paywall.css</code>) that handles wallets, CCTP bridging, and Circle sessions. You do not need to build a crypto frontend from scratch.</p>
 <p>Your connector has two responsibilities regarding the frontend:
-1. <strong>Serve and Inject:</strong> Serve the <code>src/ui</code> directory as static assets and inject the script into your platform's HTML response using a reverse proxy. The reverse proxy will route traffic to your platform's <code>upstreamUrl</code> (defined in the configuration).
-2. <strong>Identity Synchronization (The <code>userId</code> rule):</strong> If your platform tracks users, you must ensure that the <code>userId</code> in the frontend exactly matches the <code>userId</code> emitted by your backend webhooks. You can do this by injecting <code>window.PLATFORM_USER_ID = 'user_123'</code> into the HTML before the paywall loads. If left undefined, the paywall generates an anonymous local ID, which is fine for anonymous tips but will not map correctly to backend presence events.</p>
+1. <strong>Serve static assets:</strong> Serve the <code>src/ui</code> directory as static assets to be loaded by the platform client.
+2. <strong>Identity Synchronization (The <code>userId</code> rule):</strong> If your platform tracks users, you must ensure that the <code>userId</code> in the frontend matches the <code>userId</code> emitted by your backend webhooks. You can do this by setting <code>window.PLATFORM_USER_ID</code> or passing it when initializing the paywall.</p>
 <h2 id="step-1-create-the-connector-directory">Step 1: Create the Connector Directory<a class="headerlink" href="#step-1-create-the-connector-directory" title="Permanent link">&para;</a></h2>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>src/connectors/
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>└── your-platform/
@@ -1586,132 +1564,68 @@
 <p>Create <code>src/connectors/your-platform/index.ts</code>:</p>
 <div class="language-typescript highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">import</span><span class="w"> </span><span class="nx">express</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s1">&#39;express&#39;</span><span class="p">;</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">import</span><span class="w"> </span><span class="nx">path</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s1">&#39;path&#39;</span><span class="p">;</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">createProxyMiddleware</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s1">&#39;http-proxy-middleware&#39;</span><span class="p">;</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">import</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="nx">cheerio</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s1">&#39;cheerio&#39;</span><span class="p">;</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="k">import</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">Connector</span><span class="p">,</span><span class="w"> </span><span class="nx">ConnectorConfig</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s1">&#39;../../core/types&#39;</span><span class="p">;</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">sessionService</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s1">&#39;../../core/session&#39;</span><span class="p">;</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="kd">const</span><span class="w"> </span><span class="nx">myConnector</span><span class="o">:</span><span class="w"> </span><span class="kt">Connector</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="nx">name</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;YourPlatform&#39;</span><span class="p">,</span>
-</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>
-</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="nx">register</span><span class="p">(</span><span class="nx">app</span><span class="o">:</span><span class="w"> </span><span class="kt">express.Express</span><span class="p">,</span><span class="w"> </span><span class="nx">config</span><span class="o">:</span><span class="w"> </span><span class="kt">ConnectorConfig</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="ow">void</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">        </span><span class="c1">// 1. Serve the universal frontend paywall assets</span>
-</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">        </span><span class="nx">app</span><span class="p">.</span><span class="nx">use</span><span class="p">(</span><span class="s1">&#39;/your-platform-assets&#39;</span><span class="p">,</span><span class="w"> </span><span class="nx">express</span><span class="p">.</span><span class="k">static</span><span class="p">(</span><span class="nx">path</span><span class="p">.</span><span class="nx">join</span><span class="p">(</span><span class="nx">__dirname</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;..&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;..&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;ui&#39;</span><span class="p">)));</span>
-</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>
-</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">        </span><span class="c1">// 2. Register your webhook/event listener</span>
-</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">        </span><span class="nx">app</span><span class="p">.</span><span class="nx">post</span><span class="p">(</span><span class="s1">&#39;/api/connectors/your-platform/webhook&#39;</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="nx">req</span><span class="p">,</span><span class="w"> </span><span class="nx">res</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">            </span><span class="kd">const</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">event</span><span class="p">,</span><span class="w"> </span><span class="nx">userId</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">req</span><span class="p">.</span><span class="nx">body</span><span class="p">;</span>
-</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>
-</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">event</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s1">&#39;viewer_joined&#39;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">                </span><span class="nx">sessionService</span><span class="p">.</span><span class="nx">recordJoin</span><span class="p">(</span><span class="nx">userId</span><span class="p">);</span>
-</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">            </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">event</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s1">&#39;viewer_left&#39;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">import</span><span class="w"> </span><span class="kr">type</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">Connector</span><span class="p">,</span><span class="w"> </span><span class="nx">ConnectorConfig</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s1">&#39;../../core/types&#39;</span><span class="p">;</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">sessionService</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s1">&#39;../../core/session&#39;</span><span class="p">;</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="kd">const</span><span class="w"> </span><span class="nx">myConnector</span><span class="o">:</span><span class="w"> </span><span class="kt">Connector</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="nx">name</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;YourPlatform&#39;</span><span class="p">,</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="nx">register</span><span class="p">(</span><span class="nx">app</span><span class="o">:</span><span class="w"> </span><span class="kt">express.Express</span><span class="p">,</span><span class="w"> </span><span class="nx">config</span><span class="o">:</span><span class="w"> </span><span class="kt">ConnectorConfig</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="ow">void</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">        </span><span class="c1">// 1. Serve the universal frontend paywall assets</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">        </span><span class="nx">app</span><span class="p">.</span><span class="nx">use</span><span class="p">(</span><span class="s1">&#39;/your-platform-assets&#39;</span><span class="p">,</span><span class="w"> </span><span class="nx">express</span><span class="p">.</span><span class="k">static</span><span class="p">(</span><span class="nx">path</span><span class="p">.</span><span class="nx">join</span><span class="p">(</span><span class="nx">__dirname</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;..&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;..&#39;</span><span class="p">,</span><span class="w"> </span><span class="s1">&#39;ui&#39;</span><span class="p">)));</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">        </span><span class="c1">// 2. Register webhook/API handler for platform events</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">        </span><span class="nx">app</span><span class="p">.</span><span class="nx">post</span><span class="p">(</span><span class="s1">&#39;/api/connectors/your-platform/events&#39;</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="nx">req</span><span class="p">,</span><span class="w"> </span><span class="nx">res</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">            </span><span class="kd">const</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">event</span><span class="p">,</span><span class="w"> </span><span class="nx">userId</span><span class="p">,</span><span class="w"> </span><span class="nx">rate</span><span class="p">,</span><span class="w"> </span><span class="nx">wallet</span><span class="p">,</span><span class="w"> </span><span class="nx">contentId</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">req</span><span class="p">.</span><span class="nx">body</span><span class="p">;</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">event</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s1">&#39;join&#39;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">                </span><span class="c1">// Starts the billing session</span>
+</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">                </span><span class="nx">sessionService</span><span class="p">.</span><span class="nx">recordJoin</span><span class="p">(</span><span class="nx">userId</span><span class="p">,</span><span class="w"> </span><span class="nx">contentId</span><span class="p">,</span><span class="w"> </span><span class="nx">rate</span><span class="p">,</span><span class="w"> </span><span class="nx">wallet</span><span class="p">);</span>
+</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">            </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">event</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s1">&#39;leave&#39;</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">                </span><span class="c1">// Ends and settles the session</span>
 </span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">                </span><span class="nx">sessionService</span><span class="p">.</span><span class="nx">recordPartAndSettle</span><span class="p">(</span><span class="nx">userId</span><span class="p">).</span><span class="k">catch</span><span class="p">(</span><span class="nx">console</span><span class="p">.</span><span class="nx">error</span><span class="p">);</span>
 </span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">            </span><span class="p">}</span>
 </span><span id="__span-1-24"><a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>
 </span><span id="__span-1-25"><a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="w">            </span><span class="nx">res</span><span class="p">.</span><span class="nx">json</span><span class="p">({</span><span class="w"> </span><span class="nx">status</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;ok&#39;</span><span class="w"> </span><span class="p">});</span>
 </span><span id="__span-1-26"><a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="w">        </span><span class="p">});</span>
-</span><span id="__span-1-27"><a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a>
-</span><span id="__span-1-28"><a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="w">        </span><span class="c1">// 3. Set up a reverse proxy using config.upstreamUrl to inject the paywall</span>
-</span><span id="__span-1-29"><a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="w">        </span><span class="nx">app</span><span class="p">.</span><span class="nx">use</span><span class="p">(</span><span class="s1">&#39;/&#39;</span><span class="p">,</span><span class="w"> </span><span class="nx">createProxyMiddleware</span><span class="p">({</span>
-</span><span id="__span-1-30"><a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="w">            </span><span class="nx">target</span><span class="o">:</span><span class="w"> </span><span class="kt">config.upstreamUrl</span><span class="p">,</span>
-</span><span id="__span-1-31"><a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="w">            </span><span class="nx">changeOrigin</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
-</span><span id="__span-1-32"><a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="w">            </span><span class="nx">selfHandleResponse</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
-</span><span id="__span-1-33"><a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a><span class="w">            </span><span class="nx">on</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-1-34"><a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="w">                </span><span class="nx">proxyRes</span><span class="o">:</span><span class="w"> </span><span class="kt">async</span><span class="w"> </span><span class="p">(</span><span class="nx">responseBuffer</span><span class="p">,</span><span class="w"> </span><span class="nx">proxyRes</span><span class="p">,</span><span class="w"> </span><span class="nx">req</span><span class="p">,</span><span class="w"> </span><span class="nx">res</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-1-35"><a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a><span class="w">                    </span><span class="kd">const</span><span class="w"> </span><span class="nx">contentType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">proxyRes</span><span class="p">.</span><span class="nx">headers</span><span class="p">[</span><span class="s1">&#39;content-type&#39;</span><span class="p">];</span>
-</span><span id="__span-1-36"><a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a><span class="w">                    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">contentType</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">contentType</span><span class="p">.</span><span class="nx">includes</span><span class="p">(</span><span class="s1">&#39;text/html&#39;</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-1-37"><a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a><span class="w">                        </span><span class="kd">const</span><span class="w"> </span><span class="nx">html</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">responseBuffer</span><span class="p">.</span><span class="nx">toString</span><span class="p">(</span><span class="s1">&#39;utf8&#39;</span><span class="p">);</span>
-</span><span id="__span-1-38"><a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a><span class="w">                        </span><span class="kd">const</span><span class="w"> </span><span class="nx">$</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">cheerio</span><span class="p">.</span><span class="nx">load</span><span class="p">(</span><span class="nx">html</span><span class="p">);</span>
-</span><span id="__span-1-39"><a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a>
-</span><span id="__span-1-40"><a id="__codelineno-1-40" name="__codelineno-1-40" href="#__codelineno-1-40"></a><span class="w">                        </span><span class="c1">// Inject the identity and the paywall script</span>
-</span><span id="__span-1-41"><a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a><span class="w">                        </span><span class="nx">$</span><span class="p">(</span><span class="s1">&#39;body&#39;</span><span class="p">).</span><span class="nx">append</span><span class="p">(</span><span class="sb">`&lt;script&gt;window.PLATFORM_USER_ID = &#39;dynamic_user_id_here&#39;;&lt;/script&gt;`</span><span class="p">);</span>
-</span><span id="__span-1-42"><a id="__codelineno-1-42" name="__codelineno-1-42" href="#__codelineno-1-42"></a><span class="w">                        </span><span class="nx">$</span><span class="p">(</span><span class="s1">&#39;body&#39;</span><span class="p">).</span><span class="nx">append</span><span class="p">(</span><span class="sb">`&lt;script src=&quot;/your-platform-assets/paywall.js&quot;&gt;&lt;/script&gt;`</span><span class="p">);</span>
-</span><span id="__span-1-43"><a id="__codelineno-1-43" name="__codelineno-1-43" href="#__codelineno-1-43"></a>
-</span><span id="__span-1-44"><a id="__codelineno-1-44" name="__codelineno-1-44" href="#__codelineno-1-44"></a><span class="w">                        </span><span class="kd">const</span><span class="w"> </span><span class="nx">modifiedHtml</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">$</span><span class="p">.</span><span class="nx">html</span><span class="p">();</span>
-</span><span id="__span-1-45"><a id="__codelineno-1-45" name="__codelineno-1-45" href="#__codelineno-1-45"></a><span class="w">                        </span><span class="nx">res</span><span class="p">.</span><span class="nx">setHeader</span><span class="p">(</span><span class="s1">&#39;Content-Length&#39;</span><span class="p">,</span><span class="w"> </span><span class="nx">Buffer</span><span class="p">.</span><span class="nx">byteLength</span><span class="p">(</span><span class="nx">modifiedHtml</span><span class="p">));</span>
-</span><span id="__span-1-46"><a id="__codelineno-1-46" name="__codelineno-1-46" href="#__codelineno-1-46"></a><span class="w">                        </span><span class="k">return</span><span class="w"> </span><span class="nx">modifiedHtml</span><span class="p">;</span>
-</span><span id="__span-1-47"><a id="__codelineno-1-47" name="__codelineno-1-47" href="#__codelineno-1-47"></a><span class="w">                    </span><span class="p">}</span>
-</span><span id="__span-1-48"><a id="__codelineno-1-48" name="__codelineno-1-48" href="#__codelineno-1-48"></a><span class="w">                    </span><span class="k">return</span><span class="w"> </span><span class="nx">responseBuffer</span><span class="p">;</span>
-</span><span id="__span-1-49"><a id="__codelineno-1-49" name="__codelineno-1-49" href="#__codelineno-1-49"></a><span class="w">                </span><span class="p">}</span>
-</span><span id="__span-1-50"><a id="__codelineno-1-50" name="__codelineno-1-50" href="#__codelineno-1-50"></a><span class="w">            </span><span class="p">}</span>
-</span><span id="__span-1-51"><a id="__codelineno-1-51" name="__codelineno-1-51" href="#__codelineno-1-51"></a><span class="w">        </span><span class="p">}));</span>
-</span><span id="__span-1-52"><a id="__codelineno-1-52" name="__codelineno-1-52" href="#__codelineno-1-52"></a><span class="w">    </span><span class="p">}</span>
-</span><span id="__span-1-53"><a id="__codelineno-1-53" name="__codelineno-1-53" href="#__codelineno-1-53"></a><span class="p">};</span>
-</span><span id="__span-1-54"><a id="__codelineno-1-54" name="__codelineno-1-54" href="#__codelineno-1-54"></a>
-</span><span id="__span-1-55"><a id="__codelineno-1-55" name="__codelineno-1-55" href="#__codelineno-1-55"></a><span class="k">export</span><span class="w"> </span><span class="k">default</span><span class="w"> </span><span class="nx">myConnector</span><span class="p">;</span>
+</span><span id="__span-1-27"><a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-1-28"><a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="p">};</span>
+</span><span id="__span-1-29"><a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a>
+</span><span id="__span-1-30"><a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="k">export</span><span class="w"> </span><span class="k">default</span><span class="w"> </span><span class="nx">myConnector</span><span class="p">;</span>
 </span></code></pre></div>
 <p>The two critical calls are:
 - <code>sessionService.recordJoin(userId)</code> - starts the billing meter
-- <code>sessionService.recordPartAndSettle(userId)</code> - stops the meter, calculates cost, refunds remaining balance</p>
+- <code>sessionService.recordPartAndSettle(userId)</code> - stops the meter, calculates cost, and settles remaining balance</p>
 <p>Everything else (Gateway deposit, x402 payment, withdrawal) is handled automatically by the core engine.</p>
 <h2 id="step-3-register-in-the-connector-registry">Step 3: Register in the Connector Registry<a class="headerlink" href="#step-3-register-in-the-connector-registry" title="Permanent link">&para;</a></h2>
-<p>Add one line to <code>src/server.ts</code>:</p>
+<p>Add your connector import to <code>src/server.ts</code>:</p>
 <div class="language-typescript highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kd">const</span><span class="w"> </span><span class="nx">CONNECTOR_REGISTRY</span><span class="o">:</span><span class="w"> </span><span class="kt">Record</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="p">{</span><span class="w"> </span><span class="nx">default</span><span class="o">:</span><span class="w"> </span><span class="kt">Connector</span><span class="w"> </span><span class="p">}</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="nx">owncast</span><span class="o">:</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="k">import</span><span class="p">(</span><span class="s1">&#39;./connectors/owncast&#39;</span><span class="p">),</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="s1">&#39;your-platform&#39;</span><span class="o">:</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="k">import</span><span class="p">(</span><span class="s1">&#39;./connectors/your-platform&#39;</span><span class="p">),</span><span class="w"> </span><span class="c1">// ← add this</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="p">};</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="s1">&#39;your-platform&#39;</span><span class="o">:</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="k">import</span><span class="p">(</span><span class="s1">&#39;./connectors/your-platform&#39;</span><span class="p">),</span><span class="w"> </span><span class="c1">// ← add this</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="p">};</span>
 </span></code></pre></div>
 <h2 id="step-4-enable-in-config">Step 4: Enable in Config<a class="headerlink" href="#step-4-enable-in-config" title="Permanent link">&para;</a></h2>
-<p>Add your connector to <code>src/tessera.config.ts</code>:</p>
+<p>Add your connector configuration to <code>src/tessera.config.ts</code>:</p>
 <div class="language-typescript highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nx">connectors</span><span class="o">:</span><span class="w"> </span><span class="p">[</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span><span class="p">{</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">        </span><span class="nx">name</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;your-platform&#39;</span><span class="p">,</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">        </span><span class="nx">upstreamUrl</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;http://localhost:9000&#39;</span><span class="p">,</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">        </span><span class="nx">ratePerSecond</span><span class="o">:</span><span class="w"> </span><span class="kt">0.0001</span><span class="p">,</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="p">},</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="p">],</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">        </span><span class="nx">ratePerSecond</span><span class="o">:</span><span class="w"> </span><span class="kt">0.0001</span><span class="p">,</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span><span class="p">},</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="p">],</span>
 </span></code></pre></div>
 <h2 id="step-5-test">Step 5: Test<a class="headerlink" href="#step-5-test" title="Permanent link">&para;</a></h2>
 <ol>
-<li>Start your platform</li>
-<li>Start Tessera: <code>npx ts-node src/index.ts</code></li>
-<li>Trigger a "viewer joined" event from your platform</li>
-<li>Verify <code>[Session] 🟢 Session started</code> appears in the terminal</li>
-<li>Trigger a "viewer left" event</li>
-<li>Verify <code>[Session] 🔴 User parted</code> and <code>[Session] ✅ Refund complete</code> appear</li>
+<li>Start your platform.</li>
+<li>Start Tessera: <code>npm run dev</code> (or equivalent start script).</li>
+<li>Trigger a "join" event from your platform plugin or backend.</li>
+<li>Verify <code>[Session] 🟢 Session started</code> appears in the terminal.</li>
+<li>Trigger a "leave" event.</li>
+<li>Verify <code>[Session] 🔴 User parted</code> and <code>[Session] ✅ Refund complete</code> appear.</li>
 </ol>
 <h2 id="step-6-multi-tenant-architecture-rules">Step 6: Multi-Tenant Architecture Rules<a class="headerlink" href="#step-6-multi-tenant-architecture-rules" title="Permanent link">&para;</a></h2>
-<p>To ensure Tessera can run multiple connectors simultaneously (e.g., Owncast and PeerTube on the same server) without routing collisions, you <strong>MUST</strong> adhere to these two architectural rules:</p>
+<p>To ensure Tessera can run multiple connectors simultaneously without routing collisions, you <strong>MUST</strong> adhere to this routing convention:</p>
 <ol>
-<li><strong>Asset Routing Convention:</strong> Any frontend assets (like <code>paywall.js</code> or <code>paywall.css</code>) must be served under a route named exactly <code>/[your-platform-name]-assets</code>. The core reverse proxies automatically ignore any routes matching <code>/*-assets/</code> to prevent swallowing requests meant for other connectors.</li>
-<li><strong>Reverse Proxy Limitations:</strong> While Tessera can run 10 connectors simultaneously, <strong>only one</strong> connector can mount a global catch-all reverse proxy (<code>app.use('/')</code>) per instance. If your platform requires a root proxy (like Owncast), users cannot enable another platform that <em>also</em> requires a root proxy on the same Tessera port.</li>
+<li><strong>Asset Routing Convention:</strong> Any frontend assets (like <code>paywall.js</code> or <code>paywall.css</code>) must be served under a route named exactly <code>/[your-platform-name]-assets</code>. The core server uses this format to isolate assets for different platforms.</li>
 </ol>
-<h2 id="reference-owncast-connector">Reference: Owncast Connector<a class="headerlink" href="#reference-owncast-connector" title="Permanent link">&para;</a></h2>
-<p>The Owncast connector in <code>src/connectors/owncast/</code> is the reference implementation. It demonstrates:</p>
-<table>
-<thead>
-<tr>
-<th>File</th>
-<th>Purpose</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>index.ts</code></td>
-<td>Implements <code>Connector</code> interface, mounts routes + proxy</td>
-</tr>
-<tr>
-<td><code>webhooks.ts</code></td>
-<td>Translates Owncast's <code>USER_JOINED</code> / <code>USER_PARTED</code> webhooks</td>
-</tr>
-<tr>
-<td><code>proxy.ts</code></td>
-<td>Reverse proxy that injects <code>paywall.js</code> into Owncast's HTML</td>
-</tr>
-<tr>
-<td><code>types.ts</code></td>
-<td>TypeScript types matching Owncast's Go webhook structs</td>
-</tr>
-<tr>
-<td><code>public/paywall.js</code></td>
-<td>Browser-side paywall (MetaMask connect, deposit, session UI)</td>
-</tr>
-<tr>
-<td><code>public/paywall.css</code></td>
-<td>Paywall styling</td>
-</tr>
-</tbody>
-</table>
 
 
 

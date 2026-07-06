@@ -1441,8 +1441,8 @@
 <hr />
 <h2 id="tldr">TL;DR<a class="headerlink" href="#tldr" title="Permanent link">&para;</a></h2>
 <p>Point Tessera at your self-hosted platform and your users start paying in USDC - by the second, by the article, or as a tip. No platform modification required.</p>
-<p>Tessera is a <strong>payment sidecar</strong>: a separate process that runs alongside your platform, intercepts the HTML response, injects the payment overlay, and handles the entire <a href="https://developers.circle.com/gateway">Circle Gateway</a> lifecycle (deposit → authorize → batch settle → withdraw) - without touching your platform's source code.</p>
-<p>The platform emits its native events as it always has. Whether that is a <code>USER_JOINED</code> webhook for a live stream, a scrobble event for a music track, or a shared-link resolution for a photo gallery, Tessera intercepts these signals and does the rest.</p>
+<p>Tessera is a <strong>payment sidecar</strong>: a companion service that runs alongside your platform, manages client paywall sessions, and handles the entire <a href="https://developers.circle.com/gateway">Circle Gateway</a> lifecycle (deposit → authorize → batch settle → withdraw) - without touching your platform's source code.</p>
+<p>The platform emits events as it always has. Whether that is a webhook for a live stream, an API call for a music track, or a tip event, Tessera processes these signals and does the rest.</p>
 <hr />
 <h2 id="the-problem">The Problem<a class="headerlink" href="#the-problem" title="Permanent link">&para;</a></h2>
 <p>Self-hosted platforms empower creators and communities with ownership and control, but they leave a critical gap unfilled: <strong>there is no native way for audiences to support the infrastructure and creators they value.</strong></p>
@@ -1471,7 +1471,7 @@
 <p>The result is a sustainability crisis: instances shut down when admins can no longer afford them, creators migrate to commercial platforms, and communities fragment.</p>
 <hr />
 <h2 id="the-solution">The Solution<a class="headerlink" href="#the-solution" title="Permanent link">&para;</a></h2>
-<p>Tessera is a <strong>payment sidecar</strong>: a separate process that sits between your users and your platform, adding a flexible nanopayment layer (be it per-second, per-action, or direct tips) without modifying any platform code.</p>
+<p>Tessera is a <strong>payment sidecar</strong>: a companion service that runs alongside your platform, adding a flexible nanopayment layer (be it per-second, per-action, or direct tips) without modifying any platform code.</p>
 <pre class="mermaid"><code>flowchart LR
     subgraph Client
         V((Viewer / Fan))
@@ -1497,7 +1497,7 @@
     style W fill:#6C63FF,stroke:#fff,stroke-width:2px,color:#fff</code></pre>
 <p><strong>Key Design Principles:</strong></p>
 <ul>
-<li><strong>Zero platform modification</strong> - Tessera acts as a reverse proxy; your platform's code remains untouched</li>
+<li><strong>Zero platform modification</strong> - Tessera operates as an independent companion sidecar; your platform's core code remains untouched</li>
 <li><strong>Pay only for what you consume (or tip)</strong>: Whether it is per-second billing for a stream, a fee for an article, or a voluntary tip for a creator, the audience pays directly for value without rigid monthly subscriptions</li>
 <li><strong>Gas-free streaming</strong> - Off-chain EIP-3009 signatures every second; batch settlement only happens when the session ends</li>
 <li><strong>Cross-chain deposits</strong> - Viewers can fund from any supported chain via Circle CCTP; settlement happens on Arc Testnet</li>
@@ -1507,17 +1507,14 @@
 <pre class="mermaid"><code>sequenceDiagram
     actor Viewer as Viewer
     participant Browser as paywall.js (Client)
-    participant Tessera as Tessera (Proxy)
     participant Platform as Self-Hosted Platform
+    participant Tessera as Tessera Sidecar
     participant Gateway as Circle Gateway
     actor Creator as Creator Wallet
 
-    %% 1. Initial Load &amp; HTML Injection
-    Viewer-&gt;&gt;Tessera: GET / (visits stream)
-    Tessera-&gt;&gt;Platform: Proxies request upstream
-    Platform--&gt;&gt;Tessera: Returns original HTML
-    Note over Tessera,Browser: Tessera injects paywall.js via Cheerio
-    Tessera--&gt;&gt;Viewer: HTML + injected paywall overlay
+    %% 1. Initial Load &amp; Integration
+    Viewer-&gt;&gt;Platform: visits site / watch video
+    Platform--&gt;&gt;Viewer: returns page (loads paywall.js from Tessera)
 
     %% 2. Wallet setup &amp; deposit
     Viewer-&gt;&gt;Browser: Clicks "Connect &amp; Fund"
@@ -1532,10 +1529,12 @@
     Gateway--&gt;&gt;Tessera: Signature verified, access granted
     Tessera--&gt;&gt;Browser: 200 OK - session active
 
-    %% 4. Per-second billing (off-chain)
+    %% 4. Streaming &amp; billing (off-chain)
+    Platform-&gt;&gt;Tessera: POST /api/connectors/events (joins / starts consumption)
     loop Every second while connected
         Note over Tessera,Gateway: EIP-3009 off-chain signatures (no gas per tick)
     end
+    Platform-&gt;&gt;Tessera: POST /api/connectors/events (parts / stops consumption)
 
     %% 5. End session &amp; refund
     Viewer-&gt;&gt;Browser: Clicks "End Session"
@@ -1546,7 +1545,7 @@
     Tessera--&gt;&gt;Browser: 200 OK - unused balance returned</code></pre>
 <p><strong>In plain terms:</strong></p>
 <ol>
-<li><strong>Viewer opens the platform</strong> → Tessera proxies the request and injects the paywall overlay into the HTML response</li>
+<li><strong>Viewer opens the platform</strong> → The platform client loads the Tessera paywall script (<code>paywall.js</code>) dynamically.</li>
 <li><strong>Viewer funds a session</strong> → A Circle Smart Contract Account (SCA) is created on Arc Testnet. The viewer deposits USDC into the Circle Gateway. This is one of the two on-chain transactions (along with the subsequent cash-out/withdrawal).</li>
 <li><strong>Session registers</strong> → The client posts the ephemeral session key to Tessera. The GatewayClient makes a single x402 authorization call to unlock access</li>
 <li><strong>Billing runs off-chain</strong> → Every second, an EIP-3009 signature authorizes a nanopayment. No gas. No blockchain transaction per tick</li>
@@ -1625,7 +1624,7 @@
 </tr>
 <tr>
 <td><a href="https://expressjs.com/"><strong>Express</strong></a></td>
-<td>HTTP proxy server</td>
+<td>Web Application Server</td>
 <td>Industry-standard Node.js web framework</td>
 </tr>
 </tbody>
