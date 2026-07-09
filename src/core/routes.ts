@@ -8,15 +8,11 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { isAddress, isHex, verifyMessage, createWalletClient, createPublicClient, http, encodeFunctionData, formatUnits, parseUnits } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { arcTestnet } from 'viem/chains';
 import { initiateUserControlledWalletsClient } from '@circle-fin/user-controlled-wallets';
 
-// Arc Testnet chain definition (viem does not bundle it yet, define inline)
-const arcTestnetChain = {
-    id: 5042002,
-    name: 'Arc Testnet',
-    nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
-    rpcUrls: { default: { http: ['https://rpc.testnet.arc.network'] } },
-} as const;
+// Arc Testnet chain — imported from viem/chains (verified: exports chain ID 5042002)
+// Per use-arc.md: "Arc Testnet is available by default in Viem — a custom chain definition is NEVER required."
 
 // Arc Testnet CCTP contracts (verified from docs.arc.network official docs)
 const ARC_MESSAGE_TRANSMITTER = '0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275' as `0x${string}`;
@@ -198,7 +194,9 @@ coreRouter.post('/circle/get-wallet', sessionLimiter, async (req: Request, res: 
         try {
             const createRes = await circleClient.createWallet({
                 userToken,
-                idempotencyKey: crypto.randomUUID(),
+                // Deterministic key derived from userId — prevents duplicate wallet creation on retries.
+                // crypto.randomUUID() would defeat the purpose of idempotency.
+                idempotencyKey: `create-wallet-${userId}`,
                 blockchains: ['ARC-TESTNET' as any],
                 accountType: 'SCA',
             });
@@ -402,11 +400,11 @@ async function executeCctpFinalizationInBackground(
         const account = privateKeyToAccount(sellerKey as `0x${string}`);
         const arcWalletClient = createWalletClient({
             account,
-            chain: arcTestnetChain,
+            chain: arcTestnet,
             transport: http(),
         });
         const arcPublicClient = createPublicClient({
-            chain: arcTestnetChain,
+            chain: arcTestnet,
             transport: http(),
         });
 
