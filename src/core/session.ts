@@ -92,6 +92,9 @@ export class SessionService {
                             if (error.response?.data) {
                                 console.error(`[Session-Loop-ERROR] Response payload:`, JSON.stringify(error.response.data));
                             }
+                            // Terminate active session on backend if payment fails (e.g. insufficient funds)
+                            this.activeSessions.delete(userId);
+                            this.gatewayClients.delete(userId);
                         }
                     }));
                 }

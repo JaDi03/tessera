@@ -1936,6 +1936,14 @@ window.arcShowTipButton = function(creatorWallet, tipAmount) {
             return;
         }
 
+        // Check if current gateway balance is sufficient for the tip
+        const currentBalance = await fetchTipBalance();
+        if (currentBalance === null || currentBalance < amount) {
+            console.log('[Tessera] Insufficient gateway balance for tip:', currentBalance, 'needed:', amount);
+            openTipOnboarding();
+            return;
+        }
+
         btn.disabled = true;
         btn.textContent = 'Sending\u2026';
 
@@ -1989,7 +1997,7 @@ window.arcShowTipButton = function(creatorWallet, tipAmount) {
                         btn.textContent = `\u2764\uFE0F Support $${amount.toFixed(2)}`;
                         void refreshStatus();
                         openTipOnboarding();
-                    } else if (res.status === 402) {
+                    } else if (res.status === 402 || res.status === 500 || String(err.error || '').toLowerCase().includes('insufficient') || String(err.error || '').toLowerCase().includes('balance')) {
                         btn.textContent = `\u2764\uFE0F Support $${amount.toFixed(2)}`;
                         void refreshStatus();
                         openTipOnboarding();
