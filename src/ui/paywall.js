@@ -115,6 +115,10 @@ function initPaywall() {
     lockMedia();
     renderPaywallOverlay();
     renderSessionManager();
+
+    if (viewerState.userId) {
+        runAutoRestoreOrLogin();
+    }
 }
 
 function injectDependencies() {
@@ -441,6 +445,162 @@ async function handleEmailLogin() {
         btn.disabled = false;
         btn.innerHTML = `${LOCK_SVG} Sign in with PIN`;
         setLoginStatus('Error: ' + (error.message || 'Unknown error. Please retry.'), true);
+    }
+}
+
+async function runAutoRestoreOrLogin() {
+    const loginBtn = document.getElementById('arc-login-btn');
+    if (loginBtn) {
+        loginBtn.disabled = true;
+        loginBtn.innerHTML = '<div class="arc-spinner-sm" style="margin-right:8px;"></div> Checking wallet status…';
+    }
+    setLoginStatus('Checking wallet status…');
+
+    try {
+        // 1. Check if backend session is active
+        const statusRes = await fetch(ARC_API_BASE + '/api/core/session-status?userId=' + viewerState.userId);
+        if (statusRes.ok) {
+            const balanceRes = await fetch(ARC_API_BASE + '/api/core/session-balance?userId=' + viewerState.userId);
+            if (balanceRes.ok) {
+                const data = await balanceRes.json();
+                const withdrawable = Number(data.gatewayWithdrawable);
+                if (withdrawable >= 0.01) {
+                    console.log('[Tessera] Active backend session found with balance:', withdrawable);
+                    // Silently close overlay & run successful unlock code
+                    const overlay = document.getElementById('arc-paywall-overlay');
+                    if (overlay) {
+                        overlay.style.opacity = '0';
+                        setTimeout(() => overlay.remove(), 500);
+                    }
+
+                    if (!isTipMode) {
+                        document.body.classList.remove('arc-locked');
+                        const sm = document.getElementById('arc-session-manager');
+                        if (sm) sm.classList.remove('arc-hidden');
+                        startSessionTimer();
+                    } else {
+                        if (typeof window.arcShowTipButton === 'function') {
+                            window.arcShowTipButton(tipCreatorWallet, tipAmountVal);
+                        }
+                        setTimeout(() => {
+                            const tipBtn = document.getElementById('arc-tip-btn');
+                            if (tipBtn) tipBtn.click();
+                        }, 100);
+                    }
+                    return;
+                }
+            }
+        }
+
+        // 2. If no active backend session, check SCA balance
+        if (viewerState.walletAddress) {
+            const currentBalance = await getArcBalance(viewerState.walletAddress);
+            if (currentBalance >= 0.01) {
+                console.log('[Tessera] Wallet has balance but no active session:', currentBalance);
+                
+                // Adjust deposit amount custom input if balance is < 1.00 USDC to avoid insufficient balance errors
+                if (currentBalance < 1.00 && currentBalance >= 0.10) {
+                    const customInput = document.getElementById('arc-deposit-custom-input');
+                    if (customInput) customInput.value = currentBalance.toFixed(2);
+                    const optButtons = document.querySelectorAll('.arc-deposit-opt');
+                    optButtons.forEach(b => b.classList.remove('active'));
+                }
+
+                if (loginBtn) {
+                    loginBtn.disabled = false;
+                    loginBtn.innerHTML = isTipMode 
+                        ? `${UNLOCK_SVG} Enable Tipping (PIN)`
+                        : `${UNLOCK_SVG} Unlock Video (PIN)`;
+                    // Override the click handler to call handleDirectLoginAndUnlock
+                    loginBtn.onclick = handleDirectLoginAndUnlock;
+                }
+                setLoginStatus('');
+                return;
+            } else {
+                console.log('[Tessera] Wallet has low balance:', currentBalance);
+                // Transitions to funding phase automatically so they can see bridge/faucet options
+                transitionToFundPhase();
+                startBalancePolling();
+                return;
+            }
+        }
+
+        // 3. Fallback: restore normal login button and click handler
+        if (loginBtn) {
+            loginBtn.disabled = false;
+            loginBtn.innerHTML = `${LOCK_SVG} Sign in with PIN`;
+            loginBtn.onclick = handleEmailLogin;
+        }
+        setLoginStatus('');
+    } catch (err) {
+        console.error('[Tessera] Auto-restore error:', err);
+        if (loginBtn) {
+            loginBtn.disabled = false;
+            loginBtn.innerHTML = `${LOCK_SVG} Sign in with PIN`;
+            loginBtn.onclick = handleEmailLogin;
+        }
+        setLoginStatus('');
+    }
+}
+
+async function handleDirectLoginAndUnlock() {
+    const btn = document.getElementById('arc-login-btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<div class="arc-spinner-sm" style="margin-right:8px;"></div> Preparing unlock…';
+    }
+    setLoginStatus('Preparing unlock…');
+
+    try {
+        // Step 1: Get Circle session token
+        const tokenRes = await fetch(ARC_API_BASE + '/api/core/circle/get-token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: viewerState.userId }),
+        });
+        if (!tokenRes.ok) throw new Error('Failed to initialize session');
+        const tokenData = await tokenRes.json();
+
+        viewerState.userToken = tokenData.userToken;
+        viewerState.encryptionKey = tokenData.encryptionKey;
+        viewerState.appId = tokenData.appId;
+
+        // Step 2: Initialize SDK
+        arcSdk = new W3SSdk({ appSettings: { appId: viewerState.appId } });
+        arcSdk.getDeviceId();
+        arcSdk.setAuthentication({
+            userToken: viewerState.userToken,
+            encryptionKey: viewerState.encryptionKey,
+        });
+
+        // Step 3: Get or create wallet
+        const walletData = await getOrCreateArcWallet();
+        viewerState.walletId = walletData.walletId;
+        viewerState.walletAddress = walletData.walletAddress;
+
+        // Cache it
+        localStorage.setItem('arc_circle_wallet_id', viewerState.walletId);
+        localStorage.setItem('arc_circle_wallet_address', viewerState.walletAddress);
+
+        // Step 4: Call handleUnlock() directly!
+        // We catch any cancellation or error to transition back to standard funding screen
+        try {
+            await handleUnlock();
+        } catch (unlockErr) {
+            console.error('[Tessera] Direct unlock failed:', unlockErr);
+            transitionToFundPhase();
+            enableUnlockButton();
+            setFundStatus('Unlock cancelled or failed: ' + (unlockErr.message || 'Please try again.'), true);
+        }
+    } catch (error) {
+        console.error('[Tessera] Direct login/unlock error:', error);
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = isTipMode 
+                ? `${UNLOCK_SVG} Enable Tipping (PIN)`
+                : `${UNLOCK_SVG} Unlock Video (PIN)`;
+        }
+        setLoginStatus('Error: ' + (error.message || 'Failed to prepare unlock.'), true);
     }
 }
 
@@ -1221,7 +1381,7 @@ function startSessionTimer() {
                         const secondsLeft = withdrawable / currentRatePerSecond;
                         const warningDiv = document.getElementById('arc-sm-warning');
                         if (warningDiv) {
-                            if (secondsLeft <= 300 && secondsLeft > 0) {
+                            if (!isTipMode && secondsLeft <= 300 && secondsLeft > 0) {
                                 warningDiv.classList.remove('arc-hidden');
                                 const tl = document.getElementById('arc-sm-time-left');
                                 if (tl) tl.textContent = `${Math.floor(secondsLeft / 60)}m ${Math.floor(secondsLeft % 60)}s`;
@@ -1494,6 +1654,9 @@ function openTipOnboarding() {
     if (isTipMode) {
         injectDependencies();
         renderPaywallOverlay();
+        if (viewerState.userId) {
+            runAutoRestoreOrLogin();
+        }
     } else if (window.ArcCashier && typeof window.ArcCashier.initPaywall === 'function') {
         window.ArcCashier.initPaywall();
     } else {
@@ -1513,8 +1676,8 @@ window.arcShowTipButton = function(creatorWallet, tipAmount) {
     container.id = 'arc-tip-btn-container';
 
     // Renders the container styled dynamically based on whether the wallet is active
-    const updateContainerStyle = () => {
-        if (viewerState.userId && viewerState.ephemeralPk) {
+    const updateContainerStyle = (connected) => {
+        if (connected) {
             // Funded/Connected card style
             container.style.cssText = `
                 position: fixed;
@@ -1548,7 +1711,7 @@ window.arcShowTipButton = function(creatorWallet, tipAmount) {
             `;
         }
     };
-    updateContainerStyle();
+    updateContainerStyle(false);
 
     container.innerHTML = `
         <div id="arc-tip-header" style="display:none;justify-content:space-between;align-items:center;margin-bottom:2px;cursor:grab;">
@@ -1632,8 +1795,8 @@ window.arcShowTipButton = function(creatorWallet, tipAmount) {
     btn.addEventListener('mouseleave', () => { btn.style.transform = 'scale(1)'; });
 
     const refreshStatus = async () => {
-        if (!viewerState.userId || !viewerState.ephemeralPk) {
-            updateContainerStyle();
+        if (!viewerState.userId) {
+            updateContainerStyle(false);
             header.style.display = 'none';
             statusCard.style.display = 'none';
             walletActions.style.display = 'none';
@@ -1643,7 +1806,24 @@ window.arcShowTipButton = function(creatorWallet, tipAmount) {
             return;
         }
 
-        updateContainerStyle();
+        let hasActiveSession = false;
+        try {
+            const res = await fetch(ARC_API_BASE + '/api/core/session-status?userId=' + viewerState.userId);
+            hasActiveSession = res.ok;
+        } catch (_) {}
+
+        if (!hasActiveSession) {
+            updateContainerStyle(false);
+            header.style.display = 'none';
+            statusCard.style.display = 'none';
+            walletActions.style.display = 'none';
+            statusPill.style.display = 'block';
+            statusPill.style.color = '#718096';
+            statusPill.textContent = '🔗 Connect wallet to tip';
+            return;
+        }
+
+        updateContainerStyle(true);
         header.style.display = 'flex';
         statusCard.style.display = 'block';
         walletActions.style.display = 'flex';
@@ -1742,8 +1922,16 @@ window.arcShowTipButton = function(creatorWallet, tipAmount) {
 
     // ── Click handler ─────────────────────────────────────────────────────
     btn.addEventListener('click', async () => {
-        // No userId or no ephemeralPk (active session) -> trigger full wallet onboarding
-        if (!viewerState.userId || !viewerState.ephemeralPk) {
+        let hasSession = false;
+        if (viewerState.userId) {
+            try {
+                const statusRes = await fetch(ARC_API_BASE + '/api/core/session-status?userId=' + viewerState.userId);
+                hasSession = statusRes.ok;
+            } catch (_) {}
+        }
+
+        // No userId or no active session -> trigger full wallet onboarding
+        if (!viewerState.userId || !hasSession) {
             openTipOnboarding();
             return;
         }
