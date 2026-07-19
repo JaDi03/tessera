@@ -25,7 +25,7 @@ const circleClient = initiateUserControlledWalletsClient({
     apiKey: process.env.CIRCLE_API_KEY || ''
 });
 
-const ARC_RPC_URL = 'https://rpc.testnet.arc-node.thecanteenapp.com/v1/swrm_047be008136bec7f51177747db1c69b232bd45fae0e67158a61fbf9d9a9528dc';
+const ARC_RPC_URL = process.env.ARC_RPC_URL || 'https://rpc.testnet.arc-node.thecanteenapp.com';
 
 const publicClient = createPublicClient({
     chain: arcTestnet,
