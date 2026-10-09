@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SessionService } from './session';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { SessionService, isBillableRate } from './session';
 import { walletService } from './wallet';
+
+const { payMock } = vi.hoisted(() => ({ payMock: vi.fn() }));
 
 vi.mock('./wallet', () => ({
     walletService: {
@@ -17,6 +19,7 @@ vi.mock('@circle-fin/x402-batching/client', () => ({
         async withdraw() {
             return { formattedAmount: '0.00495', mintTxHash: '0xabc123' };
         }
+        pay = payMock;
     }
 }));
 
@@ -68,5 +71,52 @@ describe('SessionService', () => {
                 ],
             })
         ).toThrow('fractions sum to');
+    });
+});
+
+describe('isBillableRate', () => {
+    it('rejects rates that format to $0.000000', () => {
+        expect(isBillableRate(0)).toBe(false);
+        expect(isBillableRate(0.0000004)).toBe(false);
+    });
+
+    it('accepts rates of at least 1 micro-USDC', () => {
+        expect(isBillableRate(0.000001)).toBe(true);
+        expect(isBillableRate(0.0001)).toBe(true);
+    });
+});
+
+describe('SessionService payment loop', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.clearAllMocks();
+        payMock.mockResolvedValue({ formattedAmount: '0.0001' });
+        vi.mocked(walletService.getSessionRecord).mockReturnValue({
+            privateKey: `0x${'1'.repeat(64)}`,
+            returnAddress: '0x000000000000000000000000000000000000dead',
+        });
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('does not call Gateway for a rate "0" session', async () => {
+        const service = new SessionService();
+        service.recordJoin('email:free@example.com', { ...BASE_REQUEST, ratePerSecond: '0' });
+
+        await vi.advanceTimersByTimeAsync(3500);
+
+        expect(payMock).not.toHaveBeenCalled();
+        expect(service.hasActiveSession('email:free@example.com')).toBe(true);
+    });
+
+    it('still bills a session with a positive rate', async () => {
+        const service = new SessionService();
+        service.recordJoin('email:paid@example.com', BASE_REQUEST);
+
+        await vi.advanceTimersByTimeAsync(3500);
+
+        expect(payMock).toHaveBeenCalled();
     });
 });

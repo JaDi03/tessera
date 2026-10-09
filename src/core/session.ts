@@ -82,6 +82,15 @@ function resolvePayoutForTick(session: ActiveSessionData, tickCount: number): st
     return session.payoutAddress;
 }
 
+/**
+ * True when the per-second price is at least 1 micro-USDC once formatted with
+ * 6 decimals (same format /stream-access passes to the Gateway middleware,
+ * which rejects prices <= 0). Rate "0" is accepted on start but bills nothing.
+ */
+export function isBillableRate(ratePerSecond: number): boolean {
+    return Number(ratePerSecond.toFixed(6)) > 0;
+}
+
 export class SessionService {
     private activeSessions = new Map<string, ActiveSessionData>();
     private gatewayClients = new Map<string, GatewayClient>();
@@ -106,7 +115,9 @@ export class SessionService {
             this.isProcessingLoop = true;
 
             try {
-                const userIds = Array.from(this.activeSessions.keys());
+                const userIds = Array.from(this.activeSessions)
+                    .filter(([, session]) => isBillableRate(session.ratePerSecond))
+                    .map(([userId]) => userId);
                 const chunkSize = 10;
                 for (let i = 0; i < userIds.length; i += chunkSize) {
                     const chunk = userIds.slice(i, i + chunkSize);
