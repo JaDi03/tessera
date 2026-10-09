@@ -74,6 +74,29 @@ describe('WalletService', () => {
         expect(fileContent.startsWith('{')).toBe(false);
     });
 
+    it('refuses to load and leaves the file untouched when MASTER_KEY is wrong', () => {
+        walletService.registerSessionKey('funded_user', '0xabcdef', '0x123456');
+        const before = fs.readFileSync(DB_PATH, 'utf-8');
+
+        const originalKey = process.env.MASTER_KEY;
+        process.env.MASTER_KEY = 'a-different-master-key-32-chars-long';
+        try {
+            expect(() => new WalletService()).toThrow('Could not load');
+        } finally {
+            process.env.MASTER_KEY = originalKey;
+        }
+
+        expect(fs.readFileSync(DB_PATH, 'utf-8')).toBe(before);
+        expect(new WalletService().getSessionRecord('funded_user').privateKey).toBe('0xabcdef');
+    });
+
+    it('refuses to load and leaves the file untouched when it is corrupt', () => {
+        fs.writeFileSync(DB_PATH, 'not-valid-ciphertext', 'utf-8');
+
+        expect(() => new WalletService()).toThrow('Could not load');
+        expect(fs.readFileSync(DB_PATH, 'utf-8')).toBe('not-valid-ciphertext');
+    });
+
     it('tracks pending agent sessions until markSessionFunded', () => {
         const userId = 'agent:0x1111222233334444555566667777888899990000';
         expect(walletService.isSessionUnfunded(userId)).toBe(true);

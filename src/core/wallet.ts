@@ -104,7 +104,13 @@ export class WalletService {
                     this.saveDb();
                 }
             } catch (e: any) {
-                console.error('[Wallet] Error loading DB:', e.message || e);
+                // Fail fast: continuing with an empty map would overwrite sessions.json on the
+                // next save and lose every ephemeral key that still holds Gateway funds.
+                throw new Error(
+                    `FATAL - Could not load ${DB_PATH} (wrong MASTER_KEY or corrupt file): ${e.message || e}. ` +
+                    'The file was left untouched.',
+                    { cause: e }
+                );
             }
         }
     }
